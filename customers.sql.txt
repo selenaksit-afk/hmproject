@@ -1,0 +1,149 @@
+ 
+ # customers tablosunda her müşteri bir satır. Dublicate customer yok.
+ # toplam satır sayısı: 1.371.980
+
+ SELECT
+  COUNT(*) AS total_rows,
+  COUNT(DISTINCT customer_id) AS unique_customers
+ FROM `project-c44538cf-504f-4df0-8d6.HM_Project.customers` ;
+
+
+#null kontrolü:
+
+# customer id'de boş veri yok. ( TEMİZ )
+# FN'de 895.050 adet null veri var. ( YÜKSEK ) -- ?
+# Active'de 907.576 adet null veri var. ( YÜKSEK ) -- ?
+# club_member_status'ta 6.062 adet null veri var. -- ( Boş veriler 'UNKNOWN'ile dolduruldu )
+# fashion_news_frequency'de 16.009 adet null veri var. -- ( Boş veriler 'UNKNOWN'ile dolduruldu )
+# Age'de 15861 adet null veri var. -- ( Boş veriler bırakıldı. )
+club_member_status, club_member_status, fashion_news_frequency, fashion_news_frequency, fashion_news_frequency
+SELECT
+  COUNT(*) AS total_rows,
+
+  COUNTIF(customer_id IS NULL) AS null_customer_id,
+  COUNTIF(FN IS NULL) AS null_FN,
+  COUNTIF(Active IS NULL) AS null_Active,
+  COUNTIF(club_member_status IS NULL) AS null_club_member_status,
+  COUNTIF(fashion_news_frequency IS NULL) AS null_fashion_news_frequency,
+  COUNTIF(age IS NULL) AS null_age,
+  COUNTIF(postal_code IS NULL) AS null_postal_code
+FROM `project-c44538cf-504f-4df0-8d6.HM_Project.customers`;
+
+# FN ve Active sütunları incelenmeli!! 
+
+# Yaş aralığını inceleme. Mantıksız veri var mı?
+# Mantıksız yaş aralığı yok. 16-99 yaş aralığında. Yaş dağılımı da mantıklı. Silinecek veri yok.
+# Bigquery null ile çalışabildiği ve boş değerler %1'e denk geldiği için böyle mi bırakalım? yoksa avg ile mi dolduralım ?
+
+SELECT
+  MIN(age) AS min_age,
+  MAX(age) AS max_age,
+  AVG(age) AS avg_age
+FROM `project-c44538cf-504f-4df0-8d6.HM_Project.customers`;
+
+SELECT
+  age,
+  COUNT(*) AS customer_count
+FROM `project-c44538cf-504f-4df0-8d6.HM_Project.customers`
+GROUP BY age
+ORDER BY age DESC;
+
+# Müşteri segmentasyonu için inceleme:
+
+SELECT
+  club_member_status,
+  COUNT(*) AS customer_count
+FROM `project-c44538cf-504f-4df0-8d6.HM_Project.customers`
+GROUP BY club_member_status
+ORDER BY customer_count DESC;
+
+# fashion_news_frequency inceleme:
+# NONE ve none yazan verileri tek tip olarak NONE'a çevirdim.
+
+SELECT
+  fashion_news_frequency,
+  COUNT(*) AS fashion_news_frequency_cnt,
+FROM `project-c44538cf-504f-4df0-8d6.HM_Project.customers`
+GROUP BY fashion_news_frequency
+ORDER BY fashion_news_frequency_cnt DESC;
+
+UPDATE `project-c44538cf-504f-4df0-8d6.HM_Project.customers`
+SET fashion_news_frequency = 'NONE'
+WHERE fashion_news_frequency = 'None';
+
+SELECT
+  fashion_news_frequency,
+  COUNT(*) AS fashion_news_frequency_cnt,
+FROM `project-c44538cf-504f-4df0-8d6.HM_Project.customers_clean`
+GROUP BY fashion_news_frequency
+ORDER BY fashion_news_frequency_cnt DESC;
+
+
+# FN ve Active sütunlarındaki boşları incelediğimizde 1 ve null değerleri mevcut. Büyük ihtimal 
+SELECT
+  FN,
+  COUNT(*) AS FN_count,
+FROM `project-c44538cf-504f-4df0-8d6.HM_Project.customers_clean`
+GROUP BY FN
+ORDER BY FN_count DESC;
+
+SELECT
+  Active,
+  COUNT(*) AS Active_count,
+FROM `project-c44538cf-504f-4df0-8d6.HM_Project.customers_clean`
+GROUP BY Active
+ORDER BY Active_count DESC;
+
+# customers_clean oluşturma. 
+
+CREATE OR REPLACE TABLE `project-c44538cf-504f-4df0-8d6.HM_Project.customers_clean` AS
+SELECT
+  customer_id,
+  CASE
+    WHEN FN = 1 THEN 1
+    ELSE 0
+  END AS FN,
+
+  CASE
+    WHEN Active = 1 THEN 1
+    ELSE 0
+  END AS Active,
+
+  COALESCE(club_member_status, 'UNKNOWN') AS club_member_status,
+  COALESCE(fashion_news_frequency, 'UNKNOWN') AS fashion_news_frequency,
+  age,
+  postal_code
+
+FROM `project-c44538cf-504f-4df0-8d6.HM_Project.customers`;
+
+# customers clean tablosu null kontrol
+
+SELECT
+  COUNT(*) AS total_rows,
+  COUNT ( DISTINCT customer_id) AS nb_unique_customers,
+  COUNTIF(customer_id IS NULL) AS null_customer_id,
+  COUNTIF(FN IS NULL) AS null_FN,
+  COUNTIF(Active IS NULL) AS null_Active,
+  COUNTIF(club_member_status IS NULL) AS null_club_member_status,
+  COUNTIF(fashion_news_frequency IS NULL) AS null_fashion_news_frequency,
+  COUNTIF(age IS NULL) AS null_age,
+  COUNTIF(postal_code IS NULL) AS null_postal_code
+FROM `project-c44538cf-504f-4df0-8d6.HM_Project.customers_clean`;
+
+# kontrol
+
+SELECT
+  club_member_status,
+  COUNT(*) AS customer_count
+FROM `project-c44538cf-504f-4df0-8d6.HM_Project.customers_clean`
+GROUP BY club_member_status
+ORDER BY customer_count DESC;
+
+#kontrol
+
+SELECT
+  fashion_news_frequency,
+  COUNT(*) AS customer_count
+FROM `project-c44538cf-504f-4df0-8d6.HM_Project.customers_clean`
+GROUP BY fashion_news_frequency
+ORDER BY customer_count DESC;

@@ -1,0 +1,109 @@
+
+# satır sayısı : 31788324 
+
+SELECT COUNT(*) AS count_rows
+ FROM `project-c44538cf-504f-4df0-8d6.HM_Project.transactions` ;
+
+# unique customer sayısı : 1362281  
+
+SELECT COUNT( DISTINCT customer_id) AS cnt_unq_customers
+ FROM `project-c44538cf-504f-4df0-8d6.HM_Project.transactions` ;
+
+# unique article sayısı : 104547  
+
+SELECT COUNT( DISTINCT article_id) AS cnt_unq_customers
+ FROM `project-c44538cf-504f-4df0-8d6.HM_Project.transactions` ;
+
+#tarih, fiyat, kanal ve null kontrolünde sütunlarda hiç boş veri olmadığı 
+# ve fiyat verilerinde sıfır veya negatif değer olmadığı tespit edilmiştir.
+
+SELECT
+  COUNT(*) AS total_rows,
+  COUNTIF(t_dat IS NULL) AS null_t_dat,
+  COUNTIF(customer_id IS NULL) AS null_customer_id,
+  COUNTIF(article_id IS NULL) AS null_article_id,
+  COUNTIF(price IS NULL) AS null_price,
+  COUNTIF(sales_channel_id IS NULL) AS null_sales_channel_id,
+
+  MIN(t_dat) AS min_date,
+  MAX(t_dat) AS max_date,
+
+  MIN(price) AS min_price,
+  MAX(price) AS max_price,
+  AVG(price) AS avg_price,
+
+  COUNTIF(price <= 0) AS zero_or_negative_price
+
+FROM `project-c44538cf-504f-4df0-8d6.HM_Project.transactions`;
+
+
+# Dublicate kontrolü:
+
+SELECT
+  customer_id,
+  article_id,
+  t_dat,
+  price,
+  sales_channel_id,
+  COUNT(*) AS duplicate_count
+FROM `project-c44538cf-504f-4df0-8d6.HM_Project.transactions`
+
+GROUP BY
+  customer_id,
+  article_id,
+  t_dat,
+  price,
+  sales_channel_id
+
+HAVING COUNT(*) > 1
+
+ORDER BY duplicate_count DESC
+LIMIT 20;
+
+# aynı müşteri, aynı tarih, aynı article, aynı fiyat ve aynı kanal 569 kez tekrar ediyor. Burda bir sorun mu var?
+
+WITH duplicate_check AS (
+
+SELECT
+  customer_id,
+  article_id,
+  t_dat,
+  price,
+  sales_channel_id,
+  COUNT(*) AS duplicate_count
+
+FROM `project-c44538cf-504f-4df0-8d6.HM_Project.transactions`
+
+GROUP BY
+  customer_id,
+  article_id,
+  t_dat,
+  price,
+  sales_channel_id
+
+HAVING COUNT(*) > 1
+)
+
+SELECT
+  COUNT(*) AS duplicate_groups,
+  SUM(duplicate_count) AS total_duplicate_rows
+FROM duplicate_check;
+
+# 31,7 milyon satırın içinde 5,5 milyon satır aynı customer, article, tarih, fiyat ve kanal kombinasyonuna sahip. Verinin %17'si.
+# dublicate_groups : 2.543.908 
+# total_duplicate_rows : 5.518.813
+
+
+SELECT *
+ FROM `project-c44538cf-504f-4df0-8d6.HM_Project.articles` 
+ WHERE article_id = 678342001;
+
+#tekilleştirilmiş tablo olarak aşağıdaki ile ilerlemek mi iyi olur?
+
+SELECT DISTINCT
+  t_dat,
+  customer_id,
+  article_id,
+  price,
+  sales_channel_id
+FROM `project-c44538cf-504f-4df0-8d6.HM_Project.transactions`
