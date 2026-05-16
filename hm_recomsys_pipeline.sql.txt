@@ -1,0 +1,216 @@
+
+/*
+======================================================================
+H&M RECOMSYS PROJESİ - PRODUCTION-READY PIPELINE
+Hazırlayanlar: Selen & Muge & Alperen
+Database: big-keyword-477422-e9.HM_Project
+======================================================================
+*/
+
+-- ======================================================================
+-- PRE-PIPELINE: ESKİ TABLOLARI TEMİZLEME
+-- BigQuery Partition/Cluster yapısını sıfırlamak için tabloları DROP ediyoruz.
+-- ======================================================================
+DROP TABLE IF EXISTS `big-keyword-477422-e9.HM_Project.articles_clean`;
+DROP TABLE IF EXISTS `big-keyword-477422-e9.HM_Project.customers_clean`;
+DROP TABLE IF EXISTS `big-keyword-477422-e9.HM_Project.transactions_clean_for_modeling`;
+
+-- ======================================================================
+-- PIPELINE START
+-- ======================================================================
+
+----------------------------------------------------------------------
+-- ADIM 1: ARTICLES (ÜRÜN) TABLOSU TEMİZLİĞİ
+-- Görünmez boşluklar (space karakterleri) NULLIF ve TRIM ile 'UNKNOWN'a çekildi.
+----------------------------------------------------------------------
+CREATE OR REPLACE TABLE `big-keyword-477422-e9.HM_Project.articles_clean` AS
+SELECT 
+  article_id, product_code, prod_name, product_type_no, product_type_name,
+  product_group_name, graphical_appearance_no, graphical_appearance_name,
+  colour_group_code, colour_group_name, perceived_colour_value_id,
+  perceived_colour_value_name, perceived_colour_master_id, perceived_colour_master_name,
+  department_no, department_name, index_code, index_name, index_group_no,
+  index_group_name, section_no, section_name, garment_group_no, garment_group_name,
+  COALESCE(NULLIF(TRIM(detail_desc), ''), 'UNKNOWN') AS detail_desc
+FROM `big-keyword-477422-e9.HM_Project.articles`;
+
+
+----------------------------------------------------------------------
+-- ADIM 2: CUSTOMERS (MÜŞTERİ) TABLOSU TEMİZLİĞİ
+-- IF fonksiyonları ile kod sadeleştirildi, NULL ve boş string karmaşası çözüldü.
+----------------------------------------------------------------------
+CREATE OR REPLACE TABLE `big-keyword-477422-e9.HM_Project.customers_clean` AS
+SELECT
+  customer_id,
+  IF(FN = 1, 1, 0) AS FN,
+  IF(Active = 1, 1, 0) AS Active,
+  COALESCE(club_member_status, 'UNKNOWN') AS club_member_status,
+  CASE 
+    WHEN fashion_news_frequency IS NULL THEN 'NONE'
+    WHEN TRIM(UPPER(fashion_news_frequency)) = '' THEN 'NONE'
+    ELSE TRIM(UPPER(fashion_news_frequency))
+  END AS fashion_news_frequency,
+  age,                                 
+  COALESCE(age, -1) AS age_filled,   
+  postal_code
+FROM `big-keyword-477422-e9.HM_Project.customers`;
+
+
+----------------------------------------------------------------------
+-- ADIM 3 & 4: RESELLER FİLTRELEME & MODELLEME TABLOSU (BİRLEŞİK)
+-- Günde 50'den fazla ürün alan hesaplar dinamik olarak hesaplanıp elenir.
+-- Tablo t_dat parametresine göre bölünüp (PARTITION), ID'lere göre gruplanmıştır (CLUSTER).
+----------------------------------------------------------------------
+CREATE OR REPLACE TABLE `big-keyword-477422-e9.HM_Project.transactions_clean_for_modeling`
+PARTITION BY t_dat
+CLUSTER BY customer_id, article_id AS
+
+WITH base_transactions AS (
+  SELECT 
+    CAST(t_dat AS DATE) AS t_dat,
+    customer_id,
+    article_id,
+    price,
+    sales_channel_id
+  FROM `big-keyword-477422-e9.HM_Project.transactions`
+),
+
+outlier_commercial_customers AS (
+  SELECT 
+    customer_id, 
+    t_dat
+  FROM base_transactions
+  GROUP BY customer_id, t_dat
+  HAVING COUNT(*) > 50
+)
+
+SELECT 
+  t.t_dat,
+  t.customer_id,
+  t.article_id,
+  ROUND(t.price, 5) AS price, 
+  t.sales_channel_id,
+  EXTRACT(YEAR FROM t.t_dat) AS year,
+  EXTRACT(MONTH FROM t.t_dat) AS month,
+  EXTRACT(DAYOFWEEK FROM t.t_dat) AS day_of_week
+FROM base_transactions t
+LEFT JOIN outlier_commercial_customers o
+  ON t.customer_id = o.customer_id AND t.t_dat = o.t_dat
+WHERE o.customer_id IS NULL;
+
+
+
+-- ======================================================================
+-- PRE-PIPELINE: ESKİ NON-PARTITION TABLOLARI TEMİZLEME (HATA ÇÖZÜMÜ)
+-- ======================================================================
+DROP TABLE IF EXISTS `big-keyword-477422-e9.HM_Project.transactions_clean_for_modeling`;
+DROP TABLE IF EXISTS `big-keyword-477422-e9.HM_Project.transactions_train`;
+DROP TABLE IF EXISTS `big-keyword-477422-e9.HM_Project.transactions_valid`;
+
+-- ======================================================================
+-- PIPELINE START: DETERMINISTIC & OPTIMAL SQL BORU HATTI
+-- ======================================================================
+
+----------------------------------------------------------------------
+-- ADIM 1: ARTICLES (ÜRÜN) TABLOSU TEMİZLİĞİ
+----------------------------------------------------------------------
+CREATE OR REPLACE TABLE `big-keyword-477422-e9.HM_Project.articles_clean` AS
+SELECT 
+    article_id, product_code, prod_name, product_type_no, product_type_name,
+    product_group_name, graphical_appearance_no, graphical_appearance_name,
+    colour_group_code, colour_group_name, perceived_colour_value_id,
+    perceived_colour_value_name, perceived_colour_master_id, perceived_colour_master_name,
+    department_no, department_name, index_code, index_name, index_group_no,
+    index_group_name, section_no, section_name, garment_group_no, garment_group_name,
+    COALESCE(detail_desc, 'UNKNOWN') AS detail_desc
+FROM `big-keyword-477422-e9.HM_Project.articles`;
+
+
+----------------------------------------------------------------------
+-- ADIM 2: CUSTOMERS (MÜŞTERI) TABLOSU TEMİZLİĞİ
+----------------------------------------------------------------------
+CREATE OR REPLACE TABLE `big-keyword-477422-e9.HM_Project.customers_clean` AS
+SELECT
+    customer_id,
+    CASE WHEN FN = 1 THEN 1 ELSE 0 END AS FN,
+    CASE WHEN Active = 1 THEN 1 ELSE 0 END AS Active,
+    COALESCE(club_member_status, 'UNKNOWN') AS club_member_status,
+    CASE 
+        WHEN TRIM(UPPER(fashion_news_frequency)) IN ('NONE', '') OR fashion_news_frequency IS NULL THEN 'NONE'
+        ELSE TRIM(UPPER(fashion_news_frequency))
+    END AS fashion_news_frequency,
+    age,                               -- EDA süreçleri için raw data
+    COALESCE(age, -1) AS age_filled,   -- ML model embedding güvenliği için filled data
+    postal_code
+FROM `big-keyword-477422-e9.HM_Project.customers`;
+
+
+----------------------------------------------------------------------
+-- ADIM 3: TRANSACTIONS AYKIRI DEĞER TESPİTİ (Reseller Filtresi)
+----------------------------------------------------------------------
+CREATE OR REPLACE TABLE `big-keyword-477422-e9.HM_Project.outlier_commercial_customers` AS
+SELECT 
+    customer_id, 
+    CAST(t_dat AS DATE) AS t_dat, 
+    COUNT(*) AS total_daily_items
+FROM `big-keyword-477422-e9.HM_Project.transactions`
+GROUP BY customer_id, t_dat
+HAVING total_daily_items > 50;
+
+
+----------------------------------------------------------------------
+-- ADIM 4: MODELLEME İÇİN EN OPTİMİZE TRANSACTIONS TABLOSU (Mimarisi Sıfırlandı)
+----------------------------------------------------------------------
+CREATE OR REPLACE TABLE `big-keyword-477422-e9.HM_Project.transactions_clean_for_modeling`
+PARTITION BY t_dat
+CLUSTER BY customer_id, article_id AS
+
+WITH base_transactions AS (
+  SELECT 
+    CAST(t_dat AS DATE) AS dt,
+    customer_id,
+    article_id,
+    price,
+    sales_channel_id
+  FROM `big-keyword-477422-e9.HM_Project.transactions`
+)
+SELECT 
+    t.dt AS t_dat,
+    t.customer_id,
+    t.article_id,
+    ROUND(t.price, 5) AS price, 
+    t.sales_channel_id,
+    EXTRACT(YEAR FROM t.dt) AS year,
+    EXTRACT(MONTH FROM t.dt) AS month,
+    EXTRACT(DAYOFWEEK FROM t.dt) AS day_of_week
+FROM base_transactions t
+LEFT JOIN `big-keyword-477422-e9.HM_Project.outlier_commercial_customers` o
+  ON t.customer_id = o.customer_id AND t.dt = o.t_dat
+WHERE o.customer_id IS NULL;
+
+
+----------------------------------------------------------------------
+-- ADIM 5: IMPLICIT FEEDBACK MATRİSİ (USER-ITEM INTERACTION MATRIX)
+----------------------------------------------------------------------
+CREATE OR REPLACE TABLE `big-keyword-477422-e9.HM_Project.user_item_matrix` AS
+SELECT
+    customer_id,
+    article_id,
+    COUNT(*) AS interaction_strength 
+FROM `big-keyword-477422-e9.HM_Project.transactions_clean_for_modeling`
+GROUP BY customer_id, article_id;
+
+
+----------------------------------------------------------------------
+-- ADIM 6: TRAIN / VALIDATION SPLIT (ZAMAN TABANLI KESİN AYRIM)
+----------------------------------------------------------------------
+-- 6.1) Train Seti
+CREATE OR REPLACE TABLE `big-keyword-477422-e9.HM_Project.transactions_train` AS
+SELECT * FROM `big-keyword-477422-e9.HM_Project.transactions_clean_for_modeling`
+WHERE t_dat < '2020-08-22';
+
+-- 6.2) Validation Seti
+CREATE OR REPLACE TABLE `big-keyword-477422-e9.HM_Project.transactions_valid` AS
+SELECT * FROM `big-keyword-477422-e9.HM_Project.transactions_clean_for_modeling`
+WHERE t_dat >= '2020-08-22';
+
