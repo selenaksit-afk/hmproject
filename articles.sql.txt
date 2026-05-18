@@ -84,3 +84,148 @@ WHERE product_code = 783707
 ORDER BY article_id;
 
 # Aynı product_code altında bulunan article_id’ler, görünmeyen SKU seviyesinde varyantlar içerebilir.
+
+------
+# 2. Eklenen kısım
+
+# kategorik text standardization
+# prod_name
+# prod_name'lerin yazımında bir standardizasyon yok. Örneğin cosy robe, 3 çeşit farklı şekilde yazılmış. Bunları normalize ediyoruz.
+
+SELECT
+  LOWER(TRIM(prod_name)) AS normalized_prod_name,
+  COUNT(DISTINCT prod_name) AS different_writings,
+  ARRAY_AGG(DISTINCT prod_name LIMIT 10) AS examples,
+  COUNT(*) AS total_products
+FROM `project-c44538cf-504f-4df0-8d6.HM_Project.articles`
+
+GROUP BY normalized_prod_name
+HAVING COUNT(DISTINCT prod_name) > 1
+
+ORDER BY different_writings DESC;
+
+SELECT
+  INITCAP(LOWER(TRIM(prod_name))) AS cleaned_prod_name,
+  COUNT(DISTINCT prod_name) AS different_writings,
+  ARRAY_AGG(DISTINCT prod_name LIMIT 10) AS original_versions,
+  COUNT(*) AS total_products
+FROM `project-c44538cf-504f-4df0-8d6.HM_Project.articles`
+GROUP BY cleaned_prod_name
+HAVING COUNT(DISTINCT prod_name) > 1
+ORDER BY different_writings DESC, total_products DESC;
+
+
+SELECT
+  product_code,
+  COUNT(DISTINCT INITCAP(LOWER(TRIM(prod_name)))) AS different_cleaned_prod_names,
+  ARRAY_AGG( DISTINCT INITCAP(LOWER(TRIM(prod_name))) LIMIT 20) AS cleaned_prod_name_examples,
+  COUNT(*) AS total_articles
+FROM `project-c44538cf-504f-4df0-8d6.HM_Project.articles`
+GROUP BY product_code
+HAVING COUNT(DISTINCT INITCAP(LOWER(TRIM(prod_name)))) > 1
+ORDER BY different_cleaned_prod_names DESC, total_articles DESC;
+
+# Tüm string sütunları için tex standardizasyonu
+
+CREATE OR REPLACE TABLE `project-c44538cf-504f-4df0-8d6.HM_Project.articles_clean` AS
+
+SELECT
+  article_id,
+  product_code,
+
+  -- Product name
+  INITCAP(LOWER(TRIM(REGEXP_REPLACE(prod_name, r'\s+', ' ')))) AS prod_name,
+
+  -- Product type
+  product_type_no,
+  INITCAP(LOWER(TRIM(REGEXP_REPLACE(product_type_name, r'\s+', ' ')))) AS product_type_name,
+
+  -- Product group
+  INITCAP(LOWER(TRIM(REGEXP_REPLACE(product_group_name, r'\s+', ' ')))) AS product_group_name,
+
+  -- Graphical appearance
+  graphical_appearance_no,
+  INITCAP(LOWER(TRIM(REGEXP_REPLACE(graphical_appearance_name, r'\s+', ' ')))) AS graphical_appearance_name,
+
+  -- Colour information
+  colour_group_code,
+  INITCAP(LOWER(TRIM(REGEXP_REPLACE(colour_group_name, r'\s+', ' ')))) AS colour_group_name,
+
+  perceived_colour_value_id,
+  INITCAP(LOWER(TRIM(REGEXP_REPLACE(perceived_colour_value_name, r'\s+', ' ')))) AS perceived_colour_value_name,
+
+  perceived_colour_master_id,
+  INITCAP(LOWER(TRIM(REGEXP_REPLACE(perceived_colour_master_name, r'\s+', ' ')))) AS perceived_colour_master_name,
+
+  -- Department
+  department_no,
+  INITCAP(LOWER(TRIM(REGEXP_REPLACE(department_name, r'\s+', ' ')))) AS department_name,
+
+  -- Index
+  index_code,
+  INITCAP(LOWER(TRIM(REGEXP_REPLACE(index_name, r'\s+', ' ')))) AS index_name,
+
+  index_group_no,
+  INITCAP(LOWER(TRIM(REGEXP_REPLACE(index_group_name, r'\s+', ' ')))) AS index_group_name,
+
+  -- Section
+  section_no,
+  INITCAP(LOWER(TRIM(REGEXP_REPLACE(section_name, r'\s+', ' ')))) AS section_name,
+
+  -- Garment group
+  garment_group_no,
+  INITCAP(LOWER(TRIM(REGEXP_REPLACE(garment_group_name, r'\s+', ' ')))) AS garment_group_name,
+
+  -- Detail description
+  INITCAP(LOWER(TRIM(REGEXP_REPLACE(COALESCE(detail_desc, 'UNKNOWN'), r'\s+', ' ')))) AS detail_desc
+
+FROM `project-c44538cf-504f-4df0-8d6.HM_Project.articles`;
+
+#son kontrol 
+
+SELECT
+  COUNT(*) AS total_rows,
+  COUNTIF(article_id IS NULL) AS null_article_id,
+  COUNTIF(product_code IS NULL) AS null_product_code,
+  COUNTIF(prod_name IS NULL) AS null_prod_name,
+  COUNTIF(product_type_no IS NULL) AS null_product_type_no,
+  COUNTIF(product_type_name IS NULL) AS null_product_type_name,
+  COUNTIF(product_group_name IS NULL) AS null_product_group_name,
+  COUNTIF(graphical_appearance_no IS NULL) AS null_graphical_appearance_no,
+  COUNTIF(graphical_appearance_name IS NULL) AS null_graphical_appearance_name,
+  COUNTIF(colour_group_code IS NULL) AS null_colour_group_code,
+  COUNTIF(colour_group_name IS NULL) AS null_colour_group_name,
+  COUNTIF(perceived_colour_value_id IS NULL) AS null_perceived_colour_value_id,
+  COUNTIF(perceived_colour_value_name IS NULL) AS null_perceived_colour_value_name,
+  COUNTIF(perceived_colour_master_id IS NULL) AS null_perceived_colour_master_id,
+  COUNTIF(perceived_colour_master_name IS NULL) AS null_perceived_colour_master_name,
+  COUNTIF(department_no IS NULL) AS null_department_no,
+  COUNTIF(department_name IS NULL) AS null_department_name,
+  COUNTIF(index_code IS NULL) AS null_index_code,
+  COUNTIF(index_name IS NULL) AS null_index_name,
+  COUNTIF(index_group_no IS NULL) AS null_index_group_no,
+  COUNTIF(index_group_name IS NULL) AS null_index_group_name,
+  COUNTIF(section_no IS NULL) AS null_section_no,
+  COUNTIF(section_name IS NULL) AS null_section_name,
+  COUNTIF(garment_group_no IS NULL) AS null_garment_group_no,
+  COUNTIF(garment_group_name IS NULL) AS null_garment_group_name,
+  COUNTIF(detail_desc IS NULL) AS null_detail_desc
+
+FROM `project-c44538cf-504f-4df0-8d6.HM_Project.articles_clean`;
+
+SELECT
+  COUNT(DISTINCT prod_name) AS distinct_prod_names
+FROM `project-c44538cf-504f-4df0-8d6.HM_Project.articles`;
+
+SELECT
+  COUNT(DISTINCT prod_name) AS distinct_prod_names
+FROM `project-c44538cf-504f-4df0-8d6.HM_Project.articles_clean`;
+
+# product hiyerarşi kontrol
+
+SELECT
+  product_group_name,
+  COUNT(*) AS total_products
+FROM `project-c44538cf-504f-4df0-8d6.HM_Project.articles_clean`
+GROUP BY product_group_name
+ORDER BY total_products DESC;
